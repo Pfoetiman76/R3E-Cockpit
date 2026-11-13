@@ -18,7 +18,7 @@ jobs:
         run: pip install pyinstaller PySide6
       - name: Kernfunktionstests
         run: python test_core.py
-      - name: EXE bauen (Onedir: schneller Start, kein schwarzes Entpack-Fenster)
+      - name: "EXE bauen (Onedir, schneller Start, kein schwarzes Entpack-Fenster)"
         run: pyinstaller --noconfirm --onedir --windowed --name R3ECockpit main.py
       - name: Paket pruefen und als ZIP schnueren
         run: |
