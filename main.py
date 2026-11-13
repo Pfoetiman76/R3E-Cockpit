@@ -11,8 +11,13 @@ import sqlite3
 import subprocess
 import sys
 
+# Hilfsprozesse unsichtbar ausfuehren: Ohne dieses Flag oeffnet Windows fuer
+# JEDEN tasklist-Aufruf ein eigenes schwarzes Konsolenfenster (die App selbst
+# hat keine Konsole). Auf anderen Plattformen ist das Flag 0.
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 APP_NAME = "R3E Cockpit"
-APP_VERSION = "0.1.2"
+APP_VERSION = "0.1.3"
 CONFIG_NAME = "launcher.json"
 SCHEMA_VERSION = 1
 
@@ -217,6 +222,7 @@ def running_process_names():
         out = subprocess.run(
             ["tasklist", "/FO", "CSV", "/NH"],
             capture_output=True, text=True, timeout=10,
+            creationflags=NO_WINDOW,
         ).stdout
     except Exception:
         return set()
@@ -304,7 +310,8 @@ def start_app(app):
             os.startfile(path)
         else:
             args = app.get("args") or []
-            subprocess.Popen([path] + list(args), cwd=os.path.dirname(path))
+            subprocess.Popen([path] + list(args), cwd=os.path.dirname(path),
+                             creationflags=NO_WINDOW)
         return None
     except OSError as exc:
         return str(exc)
