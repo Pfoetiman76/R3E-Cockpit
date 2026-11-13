@@ -49,7 +49,7 @@ check("Status bereit", main.app_status_text({"path": "C:/a.exe"}, set())[0] == "
 check("Status laeuft", main.app_status_text({"path": "C:/a.exe", "process": "a.exe"}, {"a.exe"})[0] == "laeuft")
 
 # 6) expand_hint
-os.environ.setdefault("LOCALAPPDATA", "C:/Users/x/AppData/Local")
+os.environ["LOCALAPPDATA"] = "C:/Users/x/AppData/Local"  # explizit setzen: auf Windows-CI-Runnern existiert die Variable ech
 check("expand_hint ersetzt Platzhalter",
       main.expand_hint(r"{LocalAppData}\Test").startswith("C:/Users/x/AppData/Local"))
 
