@@ -19,7 +19,7 @@ import updater  # 0.3.0: Update-Pruefung ueber GitHub Releases
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 APP_NAME = "R3E Cockpit"
-APP_VERSION = "0.3.2"
+APP_VERSION = "0.3.3"
 CONFIG_NAME = "launcher.json"
 SCHEMA_VERSION = 1
 
@@ -330,6 +330,29 @@ def new_program_id(name):
     return slug or "programm"
 
 
+def profile_id_from_name(name):
+    """ID fuer ein neues Profil aus dem Namen ableiten (stabil, alphanumerisch)."""
+    import re as _re
+    slug = _re.sub(r"[^a-z0-9]+", "_", (name or "").lower()).strip("_")
+    return slug or "profil"
+
+
+def profile_add(cfg, name):
+    """Neues benanntes Profil anlegen. Rueckgabe: Profil oder None bei leerem Namen."""
+    name = (name or "").strip()
+    if not name:
+        return None
+    pid = profile_id_from_name(name)
+    ids = {p.get("id") for p in cfg.get("profiles", [])}
+    base, n = pid, 2
+    while pid in ids:
+        pid = "%s_%d" % (base, n)
+        n += 1
+    prof = {"id": pid, "name": name, "apps": []}
+    cfg.setdefault("profiles", []).append(prof)
+    return prof
+
+
 def start_app(app):
     """Programm starten. Rueckgabe: Fehlermeldung oder None."""
     path = app.get("path") or ""
@@ -396,7 +419,7 @@ def main():
     from PySide6.QtWidgets import (
         QApplication, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
         QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel,
-        QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+        QInputDialog, QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWidget,
     )
 
     cfg = load_config()
@@ -740,6 +763,47 @@ def main():
             cb.setChecked(app_cfg.get("id") in (prof.get("apps") or []))
             checks[app_cfg.get("id")] = cb
             col.addWidget(cb)
+        nrow = QHBoxLayout()
+        ren_btn = QPushButton("Umbenennen")
+        ren_btn.setObjectName("editBtn")
+
+        def do_rename(_=False, p=prof):
+            new_name, ok = QInputDialog.getText(dlg, "Profil umbenennen",
+                                                "Neuer Name:", text=p.get("name", ""))
+            new_name = (new_name or "").strip()
+            if not ok or not new_name or new_name == p.get("name"):
+                return
+            p["name"] = new_name
+            save_config(cfg)
+            prof_feedback.setText('Profil umbenannt in "%s" - erscheint nach Neustart.'
+                                  % new_name)
+            QTimer.singleShot(8000, lambda: prof_feedback.setText(""))
+            dlg.reject()
+
+        ren_btn.clicked.connect(do_rename)
+        nrow.addWidget(ren_btn)
+        del_btn = QPushButton("Löschen")
+        del_btn.setObjectName("editBtn")
+
+        def do_delete(_=False, p=prof):
+            reply = QMessageBox.question(dlg, "Profil löschen",
+                                         'Profil "%s" wirklich löschen?' % p.get("name", ""),
+                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply != QMessageBox.Yes:
+                return
+            pl = cfg.get("profiles", [])
+            if p in pl:
+                pl.remove(p)
+            save_config(cfg)
+            prof_feedback.setText('Profil "%s" gelöscht - verschwindet nach Neustart.'
+                                  % p.get("name", ""))
+            QTimer.singleShot(8000, lambda: prof_feedback.setText(""))
+            dlg.reject()
+
+        del_btn.clicked.connect(do_delete)
+        nrow.addWidget(del_btn)
+        nrow.addStretch(1)
+        col.addLayout(nrow)
         col.addStretch(1)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Save).setText("Speichern")
@@ -769,6 +833,25 @@ def main():
             ebtn.setToolTip("Programmauswahl für %s bearbeiten" % prof.get("name", ""))
             ebtn.clicked.connect(lambda _=False, p=prof: edit_profile(p))
             prow.addWidget(ebtn)
+        addbtn = QPushButton("＋ Profil")
+        addbtn.setObjectName("editBtn")
+        addbtn.setToolTip("Neues eigenes Profil anlegen")
+
+        def on_add_profile(_=False):
+            name, ok = QInputDialog.getText(root, "Neues Profil", "Name des Profils:")
+            prof_new = profile_add(cfg, name)
+            if prof_new is None:
+                if ok:
+                    QMessageBox.warning(root, "Neues Profil",
+                                        "Bitte einen Namen eingeben.")
+                return
+            save_config(cfg)
+            prof_feedback.setText('Profil "%s" angelegt - Kachel erscheint nach Neustart.'
+                                  % prof_new["name"])
+            QTimer.singleShot(8000, lambda: prof_feedback.setText(""))
+
+        addbtn.clicked.connect(on_add_profile)
+        prow.addWidget(addbtn)
         prow.addStretch(1)
         outer.addLayout(prow, next_row + 1, 0, 1, 3)
         outer.addWidget(prof_feedback, next_row + 2, 0, 1, 3)

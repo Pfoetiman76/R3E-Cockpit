@@ -58,6 +58,11 @@ Jedes Startprofil („Rennabend“, „Analyse“) hat rechts einen eigenen Bear
 - Haken gesetzt = das Profil startet dieses Programm.
 - „Speichern“ schreibt die Auswahl in die `launcher.json`.
 
+### Eigene Profile (ab v0.3.3)
+- Knopf „＋ Profil“ in der Profilzeile: Namen eingeben, fertig — das neue Profil erscheint beim nächsten Start mit eigenem roten Start-Button und ⚙-Menü.
+- Im ⚙-Menü jedes Profils gibt es zusätzlich „Umbenennen“ und „Löschen“ (mit Sicherheitsabfrage).
+- Änderungen an Namen und neue Profile erscheinen erst nach dem nächsten Start des Cockpits, die Programmauswahl wirkt sofort.
+
 ## Erste Einrichtung
 
 Die App versucht, Installationspfade automatisch zu erkennen. Kacheln ohne gefundenen Pfad zeigen den Button **„Pfad festlegen“**:

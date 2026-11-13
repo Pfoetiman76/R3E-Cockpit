@@ -102,3 +102,26 @@ def test_new_program_id():
     assert mod.new_program_id("Conspit Link 2.0!") == "conspit_link_2_0"
     assert mod.new_program_id("") == "programm"
     assert mod.new_program_id("Ünïcödé") == "n_c_d"
+
+
+def test_profile_id_from_name():
+    """0.3.3: Profil-IDs klein, alphanumerisch, Fallback bei Leertext."""
+    assert mod.profile_id_from_name("Quali Warmup") == "quali_warmup"
+    assert mod.profile_id_from_name("") == "profil"
+
+
+def test_profile_add():
+    """0.3.3: Eigenes Profil anlegen: Name, eindeutige ID, leere App-Liste."""
+    cfg = {"profiles": [{"id": "rennabend", "name": "Rennabend", "apps": []}]}
+    p = mod.profile_add(cfg, "Quali")
+    assert p["name"] == "Quali" and p["id"] == "quali" and p["apps"] == []
+    assert cfg["profiles"][-1] is p
+    # gleicher Name -> Suffix _2
+    p2 = mod.profile_add(cfg, "Quali")
+    assert p2["id"] == "quali_2"
+    # Leerer Name -> None, nichts angehaengt
+    assert mod.profile_add(cfg, "   ") is None
+    assert len(cfg["profiles"]) == 3
+    # Leerer Name mit Whitespace wird normalisiert
+    p3 = mod.profile_add(cfg, "  Test Lauf  ")
+    assert p3["name"] == "Test Lauf"
