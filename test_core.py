@@ -37,12 +37,7 @@ check("Prozessname override", main.app_process_name(app_cfg2) == "pitbossr3e.exe
 check("app_is_running Treffer", main.app_is_running(app_cfg2, {"pitbossr3e.exe"}))
 check("app_is_running kein Treffer", not main.app_is_running(app_cfg2, set()))
 
-# 4) status_file_ok: Datei im Arbeitsverzeichnis
-open("___test_status.txt", "w").write("x")
-check("status_file_ok vorhanden", main.status_file_ok({"status_file": "___test_status.txt"}))
-check("status_file_ok fehlt", not main.status_file_ok({"status_file": "gibtsnich.xyz"}))
-os.remove("___test_status.txt")
-
+# 4) status_file-Pruefung entfallen (v0.1.4)
 # 5) app_status_text Pfaelle
 check("Status Pfad fehlt", main.app_status_text({"path": ""}, set())[1] == "warn")
 check("Status bereit", main.app_status_text({"path": "C:/a.exe"}, set())[0] == "bereit")

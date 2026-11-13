@@ -17,7 +17,7 @@ import sys
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 APP_NAME = "R3E Cockpit"
-APP_VERSION = "0.1.3"
+APP_VERSION = "0.1.4"
 CONFIG_NAME = "launcher.json"
 SCHEMA_VERSION = 1
 
@@ -30,7 +30,6 @@ DEFAULT_CONFIG = {
             "id": "pitboss_r3e",
             "name": "PitBoss R3E",
             "group": "r3e",
-            "version": "0.4.2.10 Beta",
             "path": "",
             "search_hints": [
                 r"{ProgramFiles}\PitBoss R3E\PitBossR3E.exe",
@@ -38,13 +37,11 @@ DEFAULT_CONFIG = {
                 r"{LocalAppData}\Programs\PitBoss R3E\PitBossR3E.exe",
             ],
             "process": "PitBossR3E.exe",
-            "status_file": r"{Documents}\PitBoss R3E\overlay_prefs.json",
         },
         {
             "id": "resultate",
             "name": "R3E-Resultate",
             "group": "r3e",
-            "version": "",
             "path": "",
             "search_hints": [
                 r"{ProgramFiles}\RaceRoom Results Companion\R3EResultate.exe",
@@ -58,7 +55,6 @@ DEFAULT_CONFIG = {
             "id": "setup_coach",
             "name": "Setup-Coach",
             "group": "r3e",
-            "version": "in Entwicklung",
             "path": "",
             "search_hints": [],
             "process": "",
@@ -274,14 +270,6 @@ def results_db_info():
         return True, -1
 
 
-def status_file_ok(app):
-    """Optionale Vorbedingung: angegebene Datei existiert (z. B. App-Config)."""
-    sf = app.get("status_file") or ""
-    if not sf:
-        return True
-    return os.path.isfile(expand_hint(sf))
-
-
 def app_status_text(app, procs):
     if app_is_running(app, procs):
         return "laeuft", "ok"
@@ -294,8 +282,6 @@ def app_status_text(app, procs):
             return txt, "info"
         return "results.db nicht gefunden", "warn"
     if app.get("fixed") or app.get("path"):
-        if not status_file_ok(app):
-            return "Konfiguration nicht gefunden", "warn"
         return "bereit", "info"
     return "Pfad fehlt", "warn"
 
@@ -393,8 +379,6 @@ def main():
         accent.setFixedHeight(4)
         name = QLabel(app_cfg.get("name", ""))
         name.setObjectName("appName")
-        sub = QLabel(app_cfg.get("version") or "")
-        sub.setObjectName("appVersion")
         status = QLabel("pruefe …")
         status.setObjectName("appStatus")
         status.setWordWrap(True)
@@ -405,7 +389,6 @@ def main():
         col.addWidget(accent)
         col.addSpacing(6)
         col.addWidget(name)
-        col.addWidget(sub)
         col.addWidget(status)
         col.addStretch(1)
         row = QHBoxLayout()
