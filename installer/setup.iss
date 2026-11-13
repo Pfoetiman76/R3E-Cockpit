@@ -23,6 +23,7 @@ SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64compatible
 WizardStyle=modern
 PrivilegesRequired=lowest
+SetupIconFile=..\assets\cockpit.ico
 UninstallDisplayIcon={app}\R3ECockpit.exe
 
 [Languages]

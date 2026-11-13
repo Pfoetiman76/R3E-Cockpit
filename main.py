@@ -19,7 +19,7 @@ import updater  # 0.3.0: Update-Pruefung ueber GitHub Releases
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 APP_NAME = "R3E Cockpit"
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.3.1"
 CONFIG_NAME = "launcher.json"
 SCHEMA_VERSION = 1
 
@@ -361,6 +361,11 @@ QPushButton#linkBtn {
 }
 QPushButton#linkBtn:hover { border-color: #e8212b; }
 QLabel#feedback { color: #ff5a63; font-size: 12px; }
+QPushButton#editBtn {
+    background-color: transparent; color: #8f8f99; border: 1px solid #26262c;
+    border-radius: 0; padding: 7px 10px; font-weight: 700;
+}
+QPushButton#editBtn:hover { border-color: #e8212b; color: #f1f1f3; }
 QPushButton#updBtn {
     background-color: transparent; color: #ff5a63; font-weight: 700;
     border: 1px solid #e8212b; border-radius: 0; padding: 5px 12px;
@@ -374,7 +379,8 @@ def main():
     from PySide6.QtGui import QDesktopServices
     from PySide6.QtWidgets import (
         QApplication, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
-        QMessageBox, QPushButton, QVBoxLayout, QWidget,
+        QCheckBox, QDialog, QDialogButtonBox, QMessageBox, QPushButton,
+        QVBoxLayout, QWidget,
     )
 
     cfg = load_config()
@@ -542,6 +548,40 @@ def main():
         QTimer.singleShot(8000, lambda: prof_feedback.setText(""))
         refresh()
 
+    def edit_profile(prof):
+        # Eigenes Menue je Profil: Auswahl der zu startenden Programme.
+        # Haken = beim Profilstart beruecksichtigt; Speicherung in launcher.json.
+        dlg = QDialog(root)
+        dlg.setWindowTitle("Profil bearbeiten: %s" % prof.get("name", ""))
+        dlg.setModal(True)
+        dlg.resize(320, 380)
+        col = QVBoxLayout(dlg)
+        hint = QLabel("Welche Programme soll das Profil \"%s\" starten?"
+                      % prof.get("name", ""))
+        hint.setObjectName("appStatus")
+        hint.setWordWrap(True)
+        col.addWidget(hint)
+        col.addSpacing(6)
+        checks = {}
+        for app_cfg in cfg.get("apps", []):
+            cb = QCheckBox(app_cfg.get("name", ""))
+            cb.setChecked(app_cfg.get("id") in (prof.get("apps") or []))
+            checks[app_cfg.get("id")] = cb
+            col.addWidget(cb)
+        col.addStretch(1)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Save).setText("Speichern")
+        buttons.button(QDialogButtonBox.Cancel).setText("Abbrechen")
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        col.addWidget(buttons)
+        if dlg.exec() == QDialog.Accepted:
+            prof["apps"] = [app_id for app_id, cb in checks.items() if cb.isChecked()]
+            save_config(cfg)
+            prof_feedback.setText("Profil %s gespeichert: %d Programme."
+                                  % (prof.get("name", ""), len(prof["apps"])))
+            QTimer.singleShot(8000, lambda: prof_feedback.setText(""))
+
     if cfg.get("profiles"):
         lbl = QLabel("STARTPROFILE")
         lbl.setObjectName("groupLabel")
@@ -552,6 +592,11 @@ def main():
             pbtn.setObjectName("primary")
             pbtn.clicked.connect(lambda _=False, p=prof: on_profile(p))
             prow.addWidget(pbtn)
+            ebtn = QPushButton("⚙")
+            ebtn.setObjectName("editBtn")
+            ebtn.setToolTip("Programmauswahl für %s bearbeiten" % prof.get("name", ""))
+            ebtn.clicked.connect(lambda _=False, p=prof: edit_profile(p))
+            prow.addWidget(ebtn)
         prow.addStretch(1)
         outer.addLayout(prow, next_row + 1, 0, 1, 3)
         outer.addWidget(prof_feedback, next_row + 2, 0, 1, 3)

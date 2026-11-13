@@ -37,6 +37,13 @@ Der Cockpit prüft 1,5 Sekunden nach dem Start automatisch die GitHub-Releases. 
 
 Schlägt die Prüfung fehl (GitHub gerade nicht erreichbar), zeigt der Button dies an — der Cockpit läuft sonst ganz normal weiter. Manuell geht es immer über die Releases-Seite.
 
+## Profile anpassen
+
+Jedes Startprofil („Rennabend“, „Analyse“) hat rechts einen eigenen Bearbeiten-Knopf (⚙). Er öffnet ein Menü mit allen Programmen als Auswahlkästchen:
+
+- Haken gesetzt = das Profil startet dieses Programm.
+- „Speichern“ schreibt die Auswahl in die `launcher.json`.
+
 ## Erste Einrichtung
 
 Die App versucht, Installationspfade automatisch zu erkennen. Kacheln ohne gefundenen Pfad zeigen den Button **„Pfad festlegen“**:

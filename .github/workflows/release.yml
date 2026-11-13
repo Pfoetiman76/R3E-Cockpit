@@ -30,10 +30,17 @@ jobs:
         shell: bash
         run: echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
+      - name: App-Icon erzeugen
+        shell: pwsh
+        run: |
+          python scripts\make_icon.py
+          if ($LASTEXITCODE -ne 0) { throw "Icon-Erzeugung fehlgeschlagen (Exit $LASTEXITCODE)" }
+          if (-not (Test-Path 'assets/cockpit.ico')) { throw 'assets/cockpit.ico fehlt' }
+
       - name: EXE bauen (Onedir, schneller Start ohne Entpack-Fenster)
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --onedir --windowed --name R3ECockpit main.py
+          pyinstaller --noconfirm --onedir --windowed --icon assets/cockpit.ico --name R3ECockpit main.py
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller fehlgeschlagen (Exit $LASTEXITCODE)" }
           if (-not (Test-Path 'dist/R3ECockpit/R3ECockpit.exe')) { throw 'dist/R3ECockpit/R3ECockpit.exe fehlt' }
 
