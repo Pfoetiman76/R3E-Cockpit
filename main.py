@@ -4,6 +4,8 @@
 Schlanke PySide6-App im PitBoss-Stil. Startet Programme per EXE-Aufruf und
 prueft Status ausschliesslich LESEND (Prozesse, Dateiexistenz, SQLite-Count).
 Der Launcher besitzt selbst nur launcher.json und schreibt in nichts anderes.
+Ab 0.4.0: HidHide-Integration (Simracing-Geraete fuer alle nicht gelisteten
+Programme unsichtbar schalten, per HidHideCLI.exe).
 """
 import json
 import os
@@ -19,7 +21,7 @@ import updater  # 0.3.0: Update-Pruefung ueber GitHub Releases
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 APP_NAME = "R3E Cockpit"
-APP_VERSION = "0.3.3"
+APP_VERSION = "0.4.0"
 CONFIG_NAME = "launcher.json"
 SCHEMA_VERSION = 1
 
@@ -176,6 +178,10 @@ def load_config():
         if not isinstance(cfg.get("profiles"), list):
             # aeltere launcher.json: Startprofile ergaenzen und speichern
             cfg["profiles"] = DEFAULT_CONFIG["profiles"]
+            save_config(cfg)
+        if not isinstance(cfg.get("hidhide"), dict):
+            # 0.4.0: aeltere launcher.json: HidHide-Sektion ergaenzen
+            cfg["hidhide"] = dict(HIDHIDE_DEFAULT)
             save_config(cfg)
         return cfg
     except Exception:
@@ -353,6 +359,190 @@ def profile_add(cfg, name):
     return prof
 
 
+# --- HidHide (0.4.0) ------------------------------------------------------
+# Konzept: Cloaking DAUERHAFT aktiv. Die Simracing-Geraete (Basis, Pedale,
+# Shifter ...) stehen auf der Hide-Liste, sind damit fuer ALLE Programme
+# unsichtbar - ausser die Programme auf der HidHide-Whitelist (RaceRoom,
+# SimHub, CrewChief, ...). "Nicht fahren" braucht keinen Schalter: Die Geraete
+# bleiben automatisch versteckt, weil nur die gelisteten Sim-Apps sie sehen.
+
+# Installationsorte der HidHideCLI.exe (aktuelles Layout zuerst, danach
+# aeltere Varianten inkl. x64-Unterordner, siehe Nefarius-Doku).
+HIDHIDE_CLI_HINTS = [
+    r"{ProgramFiles}\Nefarius Software Solutions\HidHide\HidHideCLI.exe",
+    r"{ProgramFiles}\Nefarius Software Solutions\HidHide\x64\HidHideCLI.exe",
+    r"{ProgramFiles}\Nefarius\HidHide\HidHideCLI.exe",
+    r"{ProgramFiles}\Nefarius\HidHide\x64\HidHideCLI.exe",
+]
+
+HIDHIDE_DEFAULT = {
+    "cli_path": "",          # Pfad zur HidHideCLI.exe (leer = automatisch suchen)
+    "hidden": [],            # Device Instance Paths auf der Hide-Liste
+    "whitelist_apps": [],    # App-IDs aus launcher.json, deren EXE freigegeben ist
+    "extra_whitelist": [],   # zusaetzliche EXE-Pfade (z. B. RRRE.exe im Steam-Ordner)
+    "cloak": True,           # Geräteverbergung global aktiv
+}
+
+
+def hidhide_section(cfg):
+    """HidHide-Sektion aus launcher.json (ergaenzt fehlende Felder)."""
+    sec = cfg.get("hidhide")
+    if not isinstance(sec, dict):
+        sec = {}
+        cfg["hidhide"] = sec
+    for key, val in HIDHIDE_DEFAULT.items():
+        sec.setdefault(key, val)
+    return sec
+
+
+def _hint_path(hint):
+    """Suchhint expandieren; auf Nicht-Windows-Plattformen (z. B. lokale
+    POSIX-Tests) Backslashes an den Plattform-Separator anpassen."""
+    expanded = expand_hint(hint)
+    if expanded and os.sep != "\\":
+        expanded = expanded.replace("\\", os.sep)
+    return expanded
+
+
+def hidhide_find_cli(cfg):
+    """Pfad zur HidHideCLI.exe: gespeicherter Pfad, sonst Suchhints."""
+    sec = hidhide_section(cfg)
+    cand = (sec.get("cli_path") or "").strip()
+    if cand and os.path.isfile(cand):
+        return cand
+    for hint in HIDHIDE_CLI_HINTS:
+        expanded = _hint_path(hint)
+        if expanded and os.path.isfile(expanded):
+            sec["cli_path"] = expanded
+            return expanded
+    return ""
+
+
+def hidhide_hide_paths(dev):
+    """Alle Instance Paths, die fuer ein Geraet versteckt werden muessen.
+    Regeln aus der Nefarius-CLI-Doku:
+    - normales HID-Geraet (Lenkrad, Pedale, HOTAS): nur der HID\\...-Pfad
+    - XInput-Geraet (xusbDeviceInstancePath nicht leer): zusaetzlich den
+      USB-Basis-Container und den XUSB-Knoten verstecken, sonst umgeht
+      XInput die HID-Tarnung.
+    Reihenfolgebleibend dedupliziert."""
+    paths = []
+    hid = (dev.get("deviceInstancePath") or "").strip()
+    if hid:
+        paths.append(hid)
+    xusb = (dev.get("xusbDeviceInstancePath") or "").strip()
+    base = (dev.get("baseContainerDeviceInstancePath") or "").strip()
+    if xusb:
+        if base:
+            paths.append(base)
+        paths.append(xusb)
+    out = []
+    for p in paths:
+        if p not in out:
+            out.append(p)
+    return out
+
+
+def hidhide_parse_devices(text):
+    """JSON-Ausgabe von --dev-gaming in eine flache Geraeteliste umsetzen.
+    Rueckgabe: Liste von {"name", "container", "paths"}."""
+    try:
+        data = json.loads(text)
+    except Exception:
+        return []
+    devices = []
+    if not isinstance(data, list):
+        return devices
+    for cont in data:
+        if not isinstance(cont, dict):
+            continue
+        cname = cont.get("friendlyName") or ""
+        for dev in cont.get("devices") or []:
+            if not isinstance(dev, dict):
+                continue
+            paths = hidhide_hide_paths(dev)
+            if not paths:
+                continue
+            label = (dev.get("description") or dev.get("product")
+                     or cname or "Geraet")
+            devices.append({"name": label, "container": cname, "paths": paths})
+    return devices
+
+
+def hidhide_build_args(hide_paths, app_paths, cloak=True):
+    """Kommandozeile fuer HidHideCLI zusammensetzen (testbar ohne Ausfuehrung).
+    --inv-off = Normalmodus: versteckte Geraete sind fuer ALLE unsichtbar,
+    ausser fuer die gelisteten Programme."""
+    args = ["--inv-off"]
+    for p in hide_paths:
+        args += ["--dev-hide", p]
+    for p in app_paths:
+        args += ["--app-reg", p]
+    args.append("--cloak-on" if cloak else "--cloak-off")
+    return args
+
+
+def hidhide_run(cli_path, args, timeout=15):
+    """HidHideCLI.exe ausfuehren. Rueckgabe: (returncode, stdout, stderr)."""
+    if not cli_path or not os.path.isfile(cli_path):
+        return 1, "", "HidHideCLI.exe nicht gefunden."
+    try:
+        proc = subprocess.run([cli_path] + list(args),
+                              capture_output=True, text=True, timeout=timeout,
+                              creationflags=NO_WINDOW)
+        return proc.returncode, proc.stdout or "", proc.stderr or ""
+    except Exception as exc:
+        return 1, "", str(exc)
+
+
+def hidhide_apply(cli_path, hide_paths, app_paths, cloak=True):
+    """Hide-Liste, Whitelist und Cloak-Zustand anwenden. None = Erfolg."""
+    rc, _out, err = hidhide_run(cli_path,
+                                hidhide_build_args(hide_paths, app_paths, cloak))
+    if rc == 0 and not err:
+        return None
+    return err or ("Rueckgabecode %d" % rc)
+
+
+def hidhide_state_text(cli_path):
+    """Aktuellen Treiberzustand abfragen (--cloak-state, Listen)."""
+    rc, out, err = hidhide_run(cli_path,
+                               ["--inv-state", "--cloak-state",
+                                "--dev-list", "--app-list"])
+    if rc != 0:
+        return None, err or ("Rueckgabecode %d" % rc)
+    return (out or "").strip(), None
+
+
+def hidhide_gaming_devices(cli_path):
+    """Angeschlossene Gaming-Geraete inventarisieren (--dev-gaming)."""
+    rc, out, err = hidhide_run(cli_path, ["--dev-gaming"])
+    if rc != 0:
+        return None, err or ("Rueckgabecode %d" % rc)
+    return hidhide_parse_devices(out), None
+
+
+def app_whitelist_paths(cfg):
+    """EXE-Pfade der freigegebenen Apps: gewaehlte App-IDs plus zusaetzliche
+    Pfade. steam://- und Ordner-Eintraege werden ausdruecklich ignoriert
+    (HidHide braucht vollstaendige EXE-Pfade)."""
+    sec = hidhide_section(cfg)
+    ids = set(sec.get("whitelist_apps") or [])
+    out = []
+    for app in cfg.get("apps", []):
+        if app.get("id") not in ids:
+            continue
+        p = (app.get("path") or "").strip()
+        if p.lower().endswith((".exe", ".com", ".bin")) and not p.startswith(
+                ("steam://", "http://", "https://")):
+            out.append(p)
+    for p in sec.get("extra_whitelist") or []:
+        p = (p or "").strip()
+        if p and p not in out:
+            out.append(p)
+    return out
+
+
 def start_app(app):
     """Programm starten. Rueckgabe: Fehlermeldung oder None."""
     path = app.get("path") or ""
@@ -419,7 +609,8 @@ def main():
     from PySide6.QtWidgets import (
         QApplication, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
         QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel,
-        QInputDialog, QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+        QInputDialog, QLineEdit, QMessageBox, QPushButton, QScrollArea,
+        QVBoxLayout, QWidget,
     )
 
     cfg = load_config()
@@ -461,6 +652,11 @@ def main():
     head.addWidget(version)
     head.addStretch(1)
     head.addWidget(rr_label)
+    hid_btn = QPushButton("HidHide")
+    hid_btn.setObjectName("editBtn")
+    hid_btn.setToolTip("Simracing-Geräte für andere Programme verstecken")
+    hid_btn.clicked.connect(lambda: hidhide_dialog())
+    head.addWidget(hid_btn)
     manage_btn = QPushButton("⚙ Programme")
     manage_btn.setObjectName("editBtn")
     manage_btn.setToolTip("Programme ändern, hinzufügen oder entfernen")
@@ -474,6 +670,251 @@ def main():
     outer.addLayout(head, 0, 0, 1, 3)
 
     tiles = {}
+
+    # --- HidHide-Verwaltung (0.4.0) ------------------------------------------
+    def hidhide_dialog():
+        sec = hidhide_section(cfg)
+        dlg = QDialog(root)
+        dlg.setWindowTitle("HidHide · Simracing-Geräte verstecken")
+        dlg.setModal(True)
+        dlg.resize(620, 560)
+        col = QVBoxLayout(dlg)
+
+        intro = QLabel(
+            "Versteckte Geräte sind für ALLE Programme unsichtbar — außer für die "
+            "unten freigegebenen Anwendungen. Cloaking bleibt dauerhaft aktiv: "
+            "Wenn Sie nicht fahren, sieht kein Programm Ihr Equipment.")
+        intro.setObjectName("appStatus")
+        intro.setWordWrap(True)
+        col.addWidget(intro)
+        col.addSpacing(8)
+
+        # CLI-Pfad
+        cli_form = QFormLayout()
+        cli_lbl = QLabel()
+        cli_lbl.setObjectName("appStatus")
+        cli_lbl.setWordWrap(True)
+
+        def show_cli():
+            cli = (sec.get("cli_path") or "").strip() or hidhide_find_cli(cfg)
+            sec["cli_path"] = cli
+            cli_lbl.setText(cli if cli else
+                            "HidHideCLI.exe nicht gefunden — bitte Pfad wählen "
+                            "(HidHide muss installiert sein).")
+        show_cli()
+        cli_row = QHBoxLayout()
+        cli_row.addWidget(cli_lbl, 1)
+        cli_browse = QPushButton("Durchsuchen …")
+        cli_row.addWidget(cli_browse)
+
+        def on_cli_browse():
+            path, _ = QFileDialog.getOpenFileName(dlg, "HidHideCLI.exe wählen",
+                                                  "", "Programme (*.exe)")
+            if path:
+                sec["cli_path"] = path
+                show_cli()
+
+        cli_browse.clicked.connect(on_cli_browse)
+        cli_form.addRow("HidHideCLI:", cli_row)
+        col.addLayout(cli_form)
+        col.addSpacing(6)
+
+        cloak_cb = QCheckBox("Geräteverbergung aktiv (Cloaking an)")
+        cloak_cb.setChecked(bool(sec.get("cloak", True)))
+        col.addWidget(cloak_cb)
+        col.addSpacing(6)
+
+        # Geräteliste
+        dev_lbl = QLabel("SIMRACING-GERÄTE AUF DER HIDELISTE")
+        dev_lbl.setObjectName("groupLabel")
+        col.addWidget(dev_lbl)
+        dev_area = QScrollArea()
+        dev_area.setWidgetResizable(True)
+        dev_host = QWidget()
+        dev_col = QVBoxLayout(dev_host)
+        dev_col.setContentsMargins(4, 4, 4, 4)
+        dev_placeholder = QLabel("Noch nicht gesucht — bitte „Geräte suchen“ klicken. "
+                                 "Equipment dazu angeschlossen lassen.")
+        dev_placeholder.setObjectName("appStatus")
+        dev_placeholder.setWordWrap(True)
+        dev_col.addWidget(dev_placeholder)
+        dev_col.addStretch(1)
+        dev_area.setWidget(dev_host)
+        dev_area.setMinimumHeight(140)
+        col.addWidget(dev_area, 1)
+        dev_btn_row = QHBoxLayout()
+        dev_search_btn = QPushButton("Geräte suchen")
+        dev_search_btn.setObjectName("editBtn")
+        dev_btn_row.addWidget(dev_search_btn)
+        dev_status = QLabel("")
+        dev_status.setObjectName("feedback")
+        dev_status.setWordWrap(True)
+        dev_btn_row.addWidget(dev_status, 1)
+        col.addLayout(dev_btn_row)
+        col.addSpacing(6)
+
+        dev_checks = []  # [(QCheckBox, device-dict)]
+
+        def rebuild_device_list(devices, status_txt):
+            nonlocal dev_placeholder
+            while dev_col.count():
+                item = dev_col.takeAt(0)
+                w = item.widget()
+                if w is not None:
+                    w.deleteLater()
+            dev_checks.clear()
+            hidden = set(sec.get("hidden") or [])
+            if devices is None:
+                dev_placeholder = QLabel(status_txt)
+                dev_placeholder.setObjectName("feedback")
+                dev_placeholder.setWordWrap(True)
+                dev_col.addWidget(dev_placeholder)
+                dev_status.setText("")
+            elif not devices:
+                dev_placeholder = QLabel(
+                    "Keine Gaming-Geräte gefunden. Bitte Geräte anschließen und "
+                    "HidHide Configuration Client schließen (blockiert die CLI), "
+                    "dann erneut suchen.")
+                dev_placeholder.setObjectName("feedback")
+                dev_placeholder.setWordWrap(True)
+                dev_col.addWidget(dev_placeholder)
+                dev_status.setText("")
+            else:
+                for dev in devices:
+                    cb = QCheckBox("%s  (%d Pfad%s)" % (
+                        dev["name"], len(dev["paths"]),
+                        "e" if len(dev["paths"]) == 1 else "en"))
+                    cb.setChecked(any(p in hidden for p in dev["paths"]))
+                    dev_checks.append((cb, dev))
+                    dev_col.addWidget(cb)
+                dev_status.setText("%d Gerät(e) gefunden." % len(devices))
+            dev_col.addStretch(1)
+
+        def on_search_devices():
+            cli = (sec.get("cli_path") or "").strip() or hidhide_find_cli(cfg)
+            sec["cli_path"] = cli
+            if not cli:
+                rebuild_device_list(None, "Keine HidHideCLI gefunden.")
+                return
+            devices, err = hidhide_gaming_devices(cli)
+            if err:
+                rebuild_device_list(None, "Fehler: %s" % err)
+                return
+            rebuild_device_list(devices, "")
+
+        dev_search_btn.clicked.connect(on_search_devices)
+
+        # Whitelist
+        wl_lbl = QLabel("FREIGEGEBENE PROGRAMME (WHITELIST)")
+        wl_lbl.setObjectName("groupLabel")
+        col.addWidget(wl_lbl)
+        wl_note = QLabel("Nur diese Programme dürfen die versteckten Geräte sehen. "
+                         "Hinweis RaceRoom: Start läuft über Steam — die RRRE.exe "
+                         "(z. B. …\\steamapps\\common\\RaceRoom\\RRRE.exe) bitte "
+                         "unten als zusätzlichen Pfad eintragen.")
+        wl_note.setObjectName("appStatus")
+        wl_note.setWordWrap(True)
+        col.addWidget(wl_note)
+        wl_ids = set(sec.get("whitelist_apps") or [])
+        app_checks = []
+        for app_cfg in cfg.get("apps", []):
+            p = (app_cfg.get("path") or "").strip()
+            is_exe = p.lower().endswith(".exe") and not p.startswith(
+                ("steam://", "http://", "https://"))
+            if not is_exe:
+                continue
+            cb = QCheckBox(app_cfg.get("name", ""))
+            cb.setChecked(app_cfg.get("id") in wl_ids)
+            app_checks.append((cb, app_cfg))
+            col.addWidget(cb)
+        extra_edit = QLineEdit()
+        extra_edit.setPlaceholderText(
+            "Zusätzliche EXE-Pfade, durch Semikolon getrennt (z. B. die RRRE.exe)")
+        current_extra = ";".join(sec.get("extra_whitelist") or [])
+        extra_edit.setText(current_extra)
+        col.addWidget(extra_edit)
+        col.addSpacing(8)
+
+        fb = QLabel("")
+        fb.setObjectName("feedback")
+        fb.setWordWrap(True)
+        col.addWidget(fb)
+
+        # Vorbelegung: Dialog beim Öffnen einmal automatisch suchen
+        cli = (sec.get("cli_path") or "").strip() or hidhide_find_cli(cfg)
+        if cli:
+            devices, err = hidhide_gaming_devices(cli)
+            if err:
+                rebuild_device_list(None, "")
+            else:
+                rebuild_device_list(devices, "")
+        else:
+            rebuild_device_list(None, "")
+
+        def on_apply():
+            cli = (sec.get("cli_path") or "").strip() or hidhide_find_cli(cfg)
+            if not cli:
+                QMessageBox.warning(dlg, "HidHide",
+                                    "HidHideCLI.exe nicht gefunden. Bitte HidHide "
+                                    "installieren oder den Pfad festlegen.")
+                return
+            hide_paths = []
+            for cb, dev in dev_checks:
+                if cb.isChecked():
+                    for p in dev["paths"]:
+                        if p not in hide_paths:
+                            hide_paths.append(p)
+            sec["whitelist_apps"] = [a.get("id") for cb, a in app_checks
+                                     if cb.isChecked()]
+            sec["extra_whitelist"] = [p.strip() for p in
+                                      extra_edit.text().split(";") if p.strip()]
+            sec["cloak"] = cloak_cb.isChecked()
+            app_paths = app_whitelist_paths(cfg)
+            err = hidhide_apply(cli, hide_paths, app_paths, sec["cloak"])
+            if err:
+                fb.setText("Fehler: %s" % err)
+                return
+            sec["hidden"] = hide_paths
+            save_config(cfg)
+            msg = ("Angewendet: %d Geräte-Pfad(e) versteckt, %d Programm(e) "
+                   "freigegeben, Cloaking %s." % (
+                       len(hide_paths), len(app_paths),
+                       "AN" if sec["cloak"] else "AUS"))
+            msg += ("\n\nWichtig: Bitte Equipment kurz ab- und wieder anstecken "
+                    "(oder Windows neu starten), damit die Tarnung greift. "
+                    "Der HidHide Configuration Client muss geschlossen sein.")
+            QMessageBox.information(dlg, "HidHide", msg)
+            fb.setText("Konfiguration angewendet und gespeichert.")
+
+        def on_show_state():
+            cli = (sec.get("cli_path") or "").strip() or hidhide_find_cli(cfg)
+            if not cli:
+                QMessageBox.warning(dlg, "HidHide",
+                                     "HidHideCLI.exe nicht gefunden.")
+                return
+            text, err = hidhide_state_text(cli)
+            if err:
+                QMessageBox.warning(dlg, "HidHide", "Fehler: %s" % err)
+                return
+            QMessageBox.information(dlg, "HidHide · aktueller Zustand",
+                                    text or "(keine Ausgabe)")
+
+        btns = QHBoxLayout()
+        state_btn = QPushButton("Status anzeigen")
+        state_btn.setObjectName("editBtn")
+        state_btn.clicked.connect(on_show_state)
+        btns.addWidget(state_btn)
+        btns.addStretch(1)
+        close_btn = QPushButton("Schließen")
+        close_btn.clicked.connect(dlg.reject)
+        btns.addWidget(close_btn)
+        apply_btn = QPushButton("Anwenden")
+        apply_btn.setObjectName("primary")
+        apply_btn.clicked.connect(on_apply)
+        btns.addWidget(apply_btn)
+        col.addLayout(btns)
+
+        dlg.exec()
 
     # --- Programmverwaltung (0.3.2) ------------------------------------------
     def manage_programs():

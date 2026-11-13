@@ -4,6 +4,40 @@ Schlanker Launcher für das R3E-Ökosystem und weitere Simracing-Programme — i
 
 ## Enthaltene Kacheln
 
+### HidHide · Simracing-Geräte verstecken (ab v0.4.0)
+Über die Kopfzeilen-Schaltfläche „HidHide“ lässt sich das komplette Simracing-Equipment
+(Lenkradbasis, Pedale, Shifter, …) dauerhaft für alle anderen Programme unsichtbar
+schalten — automatisch über die mitgelieferte `HidHideCLI.exe` der
+[HidHide](https://docs.nefarius.at/projects/HidHide/)-Treiberlösung von Nefarius.
+
+Funktionsweise:
+
+1. **Cloaking dauerhaft aktiv:** Versteckte Geräte sind für alle Programme unsichtbar,
+   außer für die freigegebenen Anwendungen auf der HidHide-Whitelist. Wenn Sie nicht
+   fahren, sieht kein Programm Ihr Equipment — ein Ein-/Ausschalten pro Fahrt ist nicht
+   nötig.
+2. **Geräte suchen:** Der Dialog listet alle angeschlossenen Gaming-Geräte
+   (`--dev-gaming`, JSON-Inventar). Pro Gerät werden automatisch alle nötigen
+   Instanzpfade versteckt: bei normalen HID-Geräten (Lenkrad, Pedale) nur der
+   `HID\…`-Pfad, bei XInput-Geräten zusätzlich USB-Basis-Container und XUSB-Knoten
+   (bekannte Umgehung, die das grafische HidHide-Tool nicht zuverlässig schafft).
+3. **Whitelist:** SimHub, CrewChief, PitBoss R3E & Co. per Häkchen freigeben.
+   RaceRoom startet über Steam — dessen `RRRE.exe` (z. B.
+   `…\steamapps\common\raceport\RRRE.exe`) bitte im Feld „Zusätzliche EXE-Pfade“
+   eintragen, sonst sieht RaceRoom das Equipment nicht.
+4. **Anwenden:** Ein Klick schreibt Hide-Liste, Whitelist und Cloaking-Zustand in
+   einem Aufruf an den Treiber (`--inv-off --dev-hide … --app-reg … --cloak-on`) und
+   speichert die Konfiguration in `launcher.json`. „Status anzeigen“ zeigt den
+   aktuellen Treiberzustand (Cloak-State, Listen).
+
+Wichtige Hinweise:
+
+- Der **HidHide Configuration Client muss geschlossen** sein, wenn der Cockpit die
+  CLI aufruft (nur ein Prozess darf den Treiber gleichzeitig öffnen).
+- Nach dem ersten Verstecken bitte das Equipment **kurz ab- und wieder anstecken**
+  (oder Windows neu starten), damit der Filter greift.
+- Die Einstellungen bleiben dauerhaft; ein Rechnerneustart ändert sie nicht.
+
 ### Programmverwaltung (ab v0.3.2)
 Über die Kopfzeilen-Schaltfläche „⚙ Programme" lassen sich Einträge bearbeiten,
 neue Programme hinzufügen und bestehende entfernen. Es gilt dieselbe Pfadlogik
@@ -71,20 +105,25 @@ Die App versucht, Installationspfade automatisch zu erkennen. Kacheln ohne gefun
 2. EXE-Datei des Programms auswählen.
 3. Pfad wird in `launcher.json` gespeichert und die Kachel zeigt „bereit“.
 
-Die `launcher.json` kann auch direkt editiert werden (UTF-8, JSON). Jeder Eintrag hat: `id`, `name`, `group`, `path`, `process` (Prozessname für die Läuft-Prüfung, Standard: Dateiname des Pfads), optional `args` (Startparameter) und `search_hints` (automatische Pfad-Vorschläge).
+Die `launcher.json` kann auch direkt editiert werden (UTF-8, JSON). Jeder Eintrag hat: `id`, `name`, `group`, `path`, `process` (Prozessname für die Läuft-Prüfung, Standard: Dateiname des Pfads), optional `args` (Startparameter) und `search_hints` (automatische Pfad-Vorschläge). Die HidHide-Sektion (`cli_path`, `hidden`, `whitelist_apps`, `extra_whitelist`, `cloak`) wird vom HidHide-Dialog verwaltet.
 
 ## Architektur-Grundsätze
 
 - Der Launcher **besitzt selbst nur** `launcher.json` — keine App schreibt in Dateien anderer Apps (konsistent mit dem R3E-Datenkonzept).
 - Statusprüfung ausschließlich lesend: `tasklist` (Prozesse), Dateiexistenz, `results.db` im SQLite-Lesemodus (Eigentümer bleibt R3E-Resultate).
 - Konfiguration wird atomar geschrieben (`.tmp` + Ersetzen).
+- HidHide-Änderungen gehen ausschließlich über die offizielle `HidHideCLI.exe`; der Cockpit erweitert die Treiberlisten, ohne fremde Einträge zu entfernen.
+
+## Voraussetzungen für HidHide
+
+- Installiertes HidHide (https://www.nefarius.at/projects/HidHide/) — der Cockpit findet die `HidHideCLI.exe` automatisch unter `%ProgramFiles%\Nefarius Software Solutions\HidHide\`, alternativ per Durchsuchen-Button.
 
 ## Entwicklung
 
 ```bash
 pip install PySide6
 python main.py
-python test_core.py   # 16 Kernfunktionstests
+python test_core.py   # Kernfunktionstests
 ```
 
 ## Veröffentlichen (Klick-Weg)

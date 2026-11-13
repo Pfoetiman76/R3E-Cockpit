@@ -80,6 +80,82 @@ old_cfg = {"schema_version": 1, "apps": [{"id": "x", "name": "T", "path": "C:/a.
 main.save_config(old_cfg)
 loaded = main.load_config()
 check("alte Konfig erhaelt Startprofile", loaded.get("profiles") == main.DEFAULT_CONFIG["profiles"])
+
+# 11) HidHide (0.4.0)
+# a) Sektion ergaenzt fehlende Felder
+check("alte Konfig erhaelt HidHide-Sektion", isinstance(loaded.get("hidhide"), dict))
+sec = main.hidhide_section({})
+check("hidhide_section Default-Felder",
+      set(sec) == {"cli_path", "hidden", "whitelist_apps", "extra_whitelist", "cloak"})
+check("hidhide_section Default-Werte",
+      sec["cli_path"] == "" and sec["hidden"] == [] and sec["cloak"] is True)
+# b) find_cli: gespeicherter Pfad wird ignoriert, wenn die Datei fehlt
+cfg2 = {"hidhide": {"cli_path": "C:/gibt/es/nicht/HidHideCLI.exe"}}
+check("hidhide_find_cli ignoriert fehlenden Pfad", main.hidhide_find_cli(cfg2) == "")
+# c) find_cli: Suchhint mit echter Datei
+tmp_pf = tempfile.mkdtemp()
+os.makedirs(os.path.join(tmp_pf, "Nefarius Software Solutions", "HidHide"))
+cli_fake = os.path.join(tmp_pf, "Nefarius Software Solutions", "HidHide", "HidHideCLI.exe")
+open(cli_fake, "wb").write(b"fake")
+old_pf = os.environ.get("ProgramFiles")
+os.environ["ProgramFiles"] = tmp_pf
+cfg3 = {"hidhide": {"cli_path": ""}}
+found = main.hidhide_find_cli(cfg3)
+check("hidhide_find_cli findet Hint", os.path.normcase(found) == os.path.normcase(cli_fake))
+check("hidhide_find_cli speichert Fund", cfg3["hidhide"]["cli_path"] == found)
+os.environ["ProgramFiles"] = old_pf or ""
+# d) hide_paths: normales HID-Geraet (Lenkrad/Pedale) -> nur HID-Pfad
+dev_hid = {"deviceInstancePath": "HID\\VID_044F&PID_0001\\6&1234&0&0000",
+           "baseContainerDeviceInstancePath": "USB\\VID_044F&PID_0001\\5&1234&0&1",
+           "xusbDeviceInstancePath": ""}
+check("hidhide_hide_paths nur HID",
+      main.hidhide_hide_paths(dev_hid) == ["HID\\VID_044F&PID_0001\\6&1234&0&0000"])
+# e) hide_paths: XInput-Geraet -> alle drei Pfade, dedupliziert
+dev_xinput = {"deviceInstancePath": "HID\\VID_045E&PID_028E\\6&abcd&0&0000",
+              "baseContainerDeviceInstancePath": "USB\\VID_045E&PID_028E\\5&abcd&0&1",
+              "xusbDeviceInstancePath": "XUSB\\VID_045E&PID_028E\\6&abcd&0&0000"}
+check("hidhide_hide_paths XInput alle drei", len(main.hidhide_hide_paths(dev_xinput)) == 3)
+check("hidhide_hide_paths leer bei leeres Geraet", main.hidhide_hide_paths({}) == [])
+# f) parse_devices: Container+Geraete flach, Name aus description/product
+sample = json.dumps([
+    {"friendlyName": "Simucube 2 Sport",
+     "devices": [
+         {"description": "Simucube 2 Sport", "product": "SC2",
+          "deviceInstancePath": "HID\\VID_16C0&PID_04D8\\6&aa&0&0000"},
+         {"description": "", "product": "Pedale",
+          "deviceInstancePath": "HID\\VID_16C0&PID_04D9\\6&bb&0&0000"},
+     ]},
+    {"friendlyName": "Xbox Pad",
+     "devices": [
+         {"description": "Controller", "product": "Xbox",
+          "deviceInstancePath": "HID\\VID_045E&PID_028E\\6&cc&0&0000",
+          "baseContainerDeviceInstancePath": "USB\\VID_045E&PID_028E\\5&cc&0&1",
+          "xusbDeviceInstancePath": "XUSB\\VID_045E&PID_028E\\6&cc&0&0000"},
+     ]},
+])
+devs = main.hidhide_parse_devices(sample)
+check("hidhide_parse_devices Anzahl", len(devs) == 3)
+check("hidhide_parse_devices Namen",
+      devs[0]["name"] == "Simucube 2 Sport" and devs[1]["name"] == "Pedale"
+      and devs[2]["container"] == "Xbox Pad")
+check("hidhide_parse_devices Pfade XInput", len(devs[2]["paths"]) == 3)
+check("hidhide_parse_devices ungueltiges JSON", main.hidhide_parse_devices("kein json") == [])
+# g) build_args: Reihenfolge inv-off, dev-hide, app-reg, cloak
+args = main.hidhide_build_args(["HID\\A"], ["C:/x/SimHub.exe"], True)
+check("hidhide_build_args Reihenfolge", args == [
+    "--inv-off", "--dev-hide", "HID\\A", "--app-reg", "C:/x/SimHub.exe", "--cloak-on"])
+check("hidhide_build_args cloak aus", main.hidhide_build_args([], [], False)[-1] == "--cloak-off")
+# h) app_whitelist_paths: nur echte EXE-Apps, steam:// ignoriert, extras angehaengt
+cfg4 = {"apps": [
+    {"id": "raceroom", "path": "steam://rungameid/518790"},
+    {"id": "simhub", "path": "C:/Program Files/SimHub/SimHubWPF.exe"},
+    {"id": "crewchief", "path": "C:/Program Files/CrewChiefV4/CrewChiefV4.exe"},
+], "hidhide": {"whitelist_apps": ["raceroom", "simhub"],
+               "extra_whitelist": ["C:/Steam/RRRE.exe"]}}
+wl = main.app_whitelist_paths(cfg4)
+check("app_whitelist_paths filtert steam und nimmt EXE + Extra",
+      wl == ["C:/Program Files/SimHub/SimHubWPF.exe", "C:/Steam/RRRE.exe"])
+
 main.base_dir = monkey
 
 print()
