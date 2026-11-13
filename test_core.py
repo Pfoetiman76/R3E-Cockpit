@@ -85,3 +85,20 @@ main.base_dir = monkey
 print()
 print("ERGEBNIS: %s" % ("ALLE TESTS BESTANDEN" if not fails else "FEHLGESCHLAGEN: %s" % fails))
 sys.exit(1 if fails else 0)
+
+
+def test_icon_candidates():
+    """0.3.2: drei moegliche Icon-Speicherorte, Windows-Separator, base_dir relativ."""
+    cands = mod.icon_candidates()
+    assert len(cands) == 3
+    assert all("cockpit.ico" in c for c in cands)
+    assert any("_internal" in c for c in cands)
+    assert all(os.path.isabs(c) for c in cands)
+
+
+def test_new_program_id():
+    """0.3.2: IDs klein, alphanumerisch, robust gegen Sonderzeichen/Leerzeichen."""
+    assert mod.new_program_id("Trading Dashboard") == "trading_dashboard"
+    assert mod.new_program_id("Conspit Link 2.0!") == "conspit_link_2_0"
+    assert mod.new_program_id("") == "programm"
+    assert mod.new_program_id("Ünïcödé") == "n_c_d"

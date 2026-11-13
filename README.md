@@ -4,6 +4,20 @@ Schlanker Launcher für das R3E-Ökosystem und weitere Simracing-Programme — i
 
 ## Enthaltene Kacheln
 
+### Programmverwaltung (ab v0.3.2)
+Über die Kopfzeilen-Schaltfläche „⚙ Programme" lassen sich Einträge bearbeiten,
+neue Programme hinzufügen und bestehende entfernen. Es gilt dieselbe Pfadlogik
+wie bei den Startprofilen: EXE-Dateien oder `steam://`-Links, Anführungszeichen
+werden automatisch entfernt. Neue oder geänderte Kacheln erscheinen nach dem
+nächsten Start des Cockpits. Systemeinträge (z. B. RaceRoom) können mit
+Sicherheitsabfrage gelöscht werden.
+
+### Taskleisten-Icon (ab v0.3.2)
+Das Fenster- und Taskleisten-Icon (assets/cockpit.ico, erzeugt von
+scripts/make_icon.py) wird im Release-Build per PyInstaller `--add-data` neben
+die EXE gepackt und über eine AppUserModelID korrekt zugeordnet, damit Windows
+nicht das Standard-Python-Icon zeigt.
+
 **R3E-Ökosystem** (mit Statusprüfung):
 - PitBoss R3E
 - R3E-Resultate (zeigt Sitzungsanzahl aus results.db — ausschließlich lesend)

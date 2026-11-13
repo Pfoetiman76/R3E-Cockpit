@@ -19,7 +19,7 @@ import updater  # 0.3.0: Update-Pruefung ueber GitHub Releases
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 APP_NAME = "R3E Cockpit"
-APP_VERSION = "0.3.1"
+APP_VERSION = "0.3.2"
 CONFIG_NAME = "launcher.json"
 SCHEMA_VERSION = 1
 
@@ -314,6 +314,22 @@ def profile_plan(cfg, profile, procs):
     return start, already, nopath
 
 
+def icon_candidates():
+    """Moegliche Speicherorte des App-Icons (Qt-frei, testbar).
+    Gefrorene Onedir-EXE: Icon liegt via --add-data im _internal-Ordner."""
+    b = base_dir()
+    return [os.path.join(b, "cockpit.ico"),
+            os.path.join(b, "_internal", "cockpit.ico"),
+            os.path.join(b, "assets", "cockpit.ico")]
+
+
+def new_program_id(name):
+    """Aus einem Anzeigenamen eine stabile ID ableiten (klein, alphanumerisch)."""
+    import re as _re
+    slug = _re.sub(r"[^a-z0-9]+", "_", (name or "").lower()).strip("_")
+    return slug or "programm"
+
+
 def start_app(app):
     """Programm starten. Rueckgabe: Fehlermeldung oder None."""
     path = app.get("path") or ""
@@ -376,11 +392,11 @@ QPushButton#updBtn:hover { background-color: #e8212b; color: #ffffff; }
 
 def main():
     from PySide6.QtCore import Qt, QTimer, QUrl
-    from PySide6.QtGui import QDesktopServices
+    from PySide6.QtGui import QDesktopServices, QIcon
     from PySide6.QtWidgets import (
         QApplication, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
-        QCheckBox, QDialog, QDialogButtonBox, QMessageBox, QPushButton,
-        QVBoxLayout, QWidget,
+        QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel,
+        QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWidget,
     )
 
     cfg = load_config()
@@ -389,6 +405,18 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setStyleSheet(STYLE)
+    # 0.3.2: Fenster- und Taskleisten-Icon. Ohne AppUserModelID gruppiert
+    # Windows Taskleiste/Alt-Tab falsch und zeigt das Standard-Python-Icon.
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "Pfoetiman76.R3ECockpit")
+    except Exception:
+        pass  # Nicht-Windows oder kein ctypes
+    for cand in icon_candidates():
+        if os.path.isfile(cand):
+            app.setWindowIcon(QIcon(cand))
+            break
 
     root = QWidget()
     root.setWindowTitle("%s %s" % (APP_NAME, APP_VERSION))
@@ -410,6 +438,11 @@ def main():
     head.addWidget(version)
     head.addStretch(1)
     head.addWidget(rr_label)
+    manage_btn = QPushButton("⚙ Programme")
+    manage_btn.setObjectName("editBtn")
+    manage_btn.setToolTip("Programme ändern, hinzufügen oder entfernen")
+    manage_btn.clicked.connect(lambda: manage_programs())
+    head.addWidget(manage_btn)
     upd_btn = QPushButton("Update verfuegbar ↓")
     upd_btn.setObjectName("updBtn")
     upd_btn.setVisible(False)
@@ -418,6 +451,145 @@ def main():
     outer.addLayout(head, 0, 0, 1, 3)
 
     tiles = {}
+
+    # --- Programmverwaltung (0.3.2) ------------------------------------------
+    def manage_programs():
+        dlg = QDialog(root)
+        dlg.setWindowTitle("Programme verwalten")
+        dlg.setModal(True)
+        dlg.resize(460, 300)
+        col = QVBoxLayout(dlg)
+
+        combo = QComboBox()
+        combo.addItem("— Neues Programm —", None)
+        for a in cfg.get("apps", []):
+            combo.addItem(a.get("name", ""), a.get("id"))
+        col.addWidget(combo)
+
+        form = QFormLayout()
+        name_edit = QLineEdit()
+        name_edit.setPlaceholderText("Anzeigename, z. B. Trading Dashboard")
+        path_edit = QLineEdit()
+        path_edit.setPlaceholderText(r"C:\Programme\Beispiel\App.exe oder steam://…")
+        proc_edit = QLineEdit()
+        proc_edit.setPlaceholderText("leer lassen = automatisch (Dateiname des Pfads)")
+        form.addRow("Name:", name_edit)
+        form.addRow("Pfad:", path_edit)
+        row_path = QHBoxLayout()
+        browse = QPushButton("Durchsuchen …")
+        browse.clicked.connect(lambda: (path_edit.setText(
+            QFileDialog.getOpenFileName(dlg, "Programm wählen", "",
+                                        "Programme (*.exe)")[0] or path_edit.text())))
+        row_path.addWidget(path_edit, 1)
+        row_path.addWidget(browse)
+        form.addRow("", row_path)
+        form.addRow("Prozessname:", proc_edit)
+        col.addLayout(form)
+        col.addSpacing(6)
+
+        hint = QLabel("Änderungen und neue Programme erscheinen als Kachel nach dem "
+                      "nächsten Start des Cockpits.")
+        hint.setObjectName("appStatus")
+        hint.setWordWrap(True)
+        col.addWidget(hint)
+        col.addStretch(1)
+
+        btns = QHBoxLayout()
+        save_btn = QPushButton("Speichern")
+        save_btn.setObjectName("primary")
+        del_btn = QPushButton("Löschen …")
+        close_btn = QPushButton("Schließen")
+        btns.addWidget(save_btn)
+        btns.addWidget(del_btn)
+        btns.addStretch(1)
+        btns.addWidget(close_btn)
+        col.addLayout(btns)
+
+        def load_selection():
+            app_id = combo.currentData()
+            if app_id is None:
+                name_edit.setText("")
+                path_edit.setText("")
+                proc_edit.setText("")
+                return
+            for a in cfg.get("apps", []):
+                if a.get("id") == app_id:
+                    name_edit.setText(a.get("name", ""))
+                    path_edit.setText(a.get("path", ""))
+                    proc_edit.setText(a.get("process", ""))
+                    return
+
+        combo.currentIndexChanged.connect(lambda _i: load_selection())
+        load_selection()
+
+        def on_save():
+            name = name_edit.text().strip()
+            path = path_edit.text().strip().replace('"', "")
+            proc = proc_edit.text().strip()
+            if not name:
+                QMessageBox.warning(dlg, "Programme verwalten",
+                                    "Bitte einen Namen angeben.")
+                return
+            if not path:
+                QMessageBox.warning(dlg, "Programme verwalten",
+                                    "Bitte einen Pfad (EXE oder steam://…) angeben.")
+                return
+            app_id = combo.currentData()
+            if app_id is None:
+                new_id = new_program_id(name)
+                existing = {a.get("id") for a in cfg.get("apps", [])}
+                if new_id in existing:
+                    new_id += "_2"
+                cfg.setdefault("apps", []).append(
+                    {"id": new_id, "name": name, "group": "weitere",
+                     "path": path, "process": proc})
+            else:
+                for a in cfg.get("apps", []):
+                    if a.get("id") == app_id:
+                        a["name"] = name
+                        a["path"] = path
+                        a["process"] = proc
+                        break
+            if not save_config(cfg):
+                QMessageBox.warning(dlg, "Programme verwalten",
+                                    "Konnte launcher.json nicht speichern.")
+                return
+            QMessageBox.information(
+                dlg, "Programme verwalten",
+                "Gespeichert. Neue oder geänderte Kacheln erscheinen nach dem "
+                "nächsten Start des Cockpits.")
+            dlg.accept()
+
+        def on_delete():
+            app_id = combo.currentData()
+            if app_id is None:
+                QMessageBox.information(dlg, "Programme verwalten",
+                                        "Zum Löschen bitte ein bestehendes Programm auswählen.")
+                return
+            for a in cfg.get("apps", []):
+                if a.get("id") == app_id:
+                    if a.get("fixed"):
+                        reply = QMessageBox.question(
+                            dlg, "Programme verwalten",
+                            "„%s“ ist ein Systemeintrag. Wirklich entfernen?" % a.get("name", ""),
+                            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                        if reply != QMessageBox.Yes:
+                            return
+                    cfg["apps"].remove(a)
+                    break
+            if not save_config(cfg):
+                QMessageBox.warning(dlg, "Programme verwalten",
+                                    "Konnte launcher.json nicht speichern.")
+                return
+            QMessageBox.information(
+                dlg, "Programme verwalten",
+                "Entfernt. Die Kachel verschwindet nach dem nächsten Start.")
+            dlg.accept()
+
+        save_btn.clicked.connect(on_save)
+        del_btn.clicked.connect(on_delete)
+        close_btn.clicked.connect(dlg.reject)
+        dlg.exec()
 
     # --- Automatisches Update (0.3.0) ---------------------------------------
     update_info = {}

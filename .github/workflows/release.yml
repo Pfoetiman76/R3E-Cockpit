@@ -40,7 +40,9 @@ jobs:
       - name: EXE bauen (Onedir, schneller Start ohne Entpack-Fenster)
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --onedir --windowed --icon assets/cockpit.ico --name R3ECockpit main.py
+          pyinstaller --noconfirm --onedir --windowed --icon assets/cockpit.ico --add-data "assets/cockpit.ico;." --name R3ECockpit main.py
+          if (-not (Test-Path 'dist/R3ECockpit/R3ECockpit.exe')) { throw 'dist/R3ECockpit/R3ECockpit.exe fehlt' }
+          if (-not (Test-Path 'dist/R3ECockpit/_internal/cockpit.ico')) { throw 'cockpit.ico fehlt im Build (Taskleisten-Icon)' }
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller fehlgeschlagen (Exit $LASTEXITCODE)" }
           if (-not (Test-Path 'dist/R3ECockpit/R3ECockpit.exe')) { throw 'dist/R3ECockpit/R3ECockpit.exe fehlt' }
 
