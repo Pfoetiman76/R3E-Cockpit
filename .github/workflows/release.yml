@@ -24,8 +24,13 @@ jobs:
         run: |
           if (-Not (Test-Path "dist/R3ECockpit.exe")) { throw "dist/R3ECockpit.exe fehlt" }
           if ((Get-Item "dist/R3ECockpit.exe").Length -lt 1000000) { throw "EXE verdächtig klein" }
-      - name: Release erstellen
+      - name: Release erstellen oder bestehendes aktualisieren
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$env:GITHUB_REF_NAME" --title "$env:GITHUB_REF_NAME" --verify-tag "dist/R3ECockpit.exe#R3E Cockpit"
+          $tag = $env:GITHUB_REF_NAME
+          if (gh release view "$tag" -R "$env:GITHUB_REPOSITORY") {
+            gh release upload "$tag" "dist/R3ECockpit.exe#R3E Cockpit" --clobber -R "$env:GITHUB_REPOSITORY"
+          } else {
+            gh release create "$tag" --title "$tag" --verify-tag "dist/R3ECockpit.exe#R3E Cockpit" -R "$env:GITHUB_REPOSITORY"
+          }
