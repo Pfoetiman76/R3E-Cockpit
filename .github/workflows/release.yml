@@ -4,35 +4,56 @@ on:
   push:
     tags: ["v*"]
 
+permissions:
+  contents: write
+
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
-    permissions:
-      contents: write
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Abhaengigkeiten installieren
         run: pip install pyinstaller PySide6
+
       - name: Kernfunktionstests
         run: python test_core.py
-      - name: "EXE bauen (Onedir, schneller Start, kein schwarzes Entpack-Fenster)"
-        run: pyinstaller --noconfirm --onedir --windowed --name R3ECockpit main.py
-      - name: Paket pruefen und als ZIP schnueren
+
+      - name: Version aus Tag ableiten
+        shell: bash
+        run: echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: EXE bauen (Onedir, schneller Start ohne Entpack-Fenster)
+        shell: pwsh
         run: |
-          if (-Not (Test-Path "dist/R3ECockpit/R3ECockpit.exe")) { throw "dist/R3ECockpit/R3ECockpit.exe fehlt" }
-          Compress-Archive -Path "dist/R3ECockpit" -DestinationPath "dist/R3ECockpit-$env:GITHUB_REF_NAME-win64.zip" -Force
-          if ((Get-Item "dist/R3ECockpit-$env:GITHUB_REF_NAME-win64.zip").Length -lt 10000000) { throw "ZIP verdächtig klein" }
-      - name: Release erstellen oder bestehendes aktualisieren
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          pyinstaller --noconfirm --onedir --windowed --name R3ECockpit main.py
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller fehlgeschlagen (Exit $LASTEXITCODE)" }
+          if (-not (Test-Path 'dist/R3ECockpit/R3ECockpit.exe')) { throw 'dist/R3ECockpit/R3ECockpit.exe fehlt' }
+
+      - name: Inno Setup installieren
+        run: choco install innosetup -y --no-progress
+
+      - name: Installer bauen
+        shell: pwsh
         run: |
-          $tag = $env:GITHUB_REF_NAME
-          $asset = "dist/R3ECockpit-$tag-win64.zip"
-          if (gh release view "$tag" -R "$env:GITHUB_REPOSITORY") {
-            gh release upload "$tag" "$asset#R3E Cockpit $tag (ZIP, entpacken und R3ECockpit.exe starten)" --clobber -R "$env:GITHUB_REPOSITORY"
-          } else {
-            gh release create "$tag" --title "$tag" --verify-tag "$asset#R3E Cockpit $tag (ZIP, entpacken und R3ECockpit.exe starten)" -R "$env:GITHUB_REPOSITORY"
-          }
+          iscc installer\setup.iss
+          if ($LASTEXITCODE -ne 0) { throw "Installer fehlgeschlagen (Exit $LASTEXITCODE)" }
+
+      - name: Installer pruefen
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem 'installer/Output/R3ECockpit-Setup-*.exe' | Select-Object -First 1
+          if (-not $setup) { throw 'Installer fehlt in installer/Output' }
+          if ($setup.Length -lt 5MB) { throw "Installer verdaechtig klein ($([math]::Round($setup.Length/1MB,1)) MB)" }
+          Write-Host ("Installer OK: {0:N1} MB ({1})" -f ($setup.Length/1MB), $setup.Name)
+
+      - name: Release veroeffentlichen
+        uses: softprops/action-gh-release@v3
+        with:
+          files: installer/Output/R3ECockpit-Setup-*.exe
+          generate_release_notes: true
