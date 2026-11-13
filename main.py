@@ -17,7 +17,7 @@ import sys
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 APP_NAME = "R3E Cockpit"
-APP_VERSION = "0.1.4"
+APP_VERSION = "0.2.0"
 CONFIG_NAME = "launcher.json"
 SCHEMA_VERSION = 1
 
@@ -116,6 +116,11 @@ DEFAULT_CONFIG = {
             "process": "",
         },
     ],
+    "profiles": [
+        {"id": "rennabend", "name": "Rennabend",
+         "apps": ["raceroom", "pitboss_r3e", "simhub", "crewchief", "conspit_link", "simucube_tuner"]},
+        {"id": "analyse", "name": "Analyse", "apps": ["resultate", "setup_coach"]},
+    ],
     "links": [
         {"id": "competitions", "name": "RaceRoom Wettbewerbe", "url": COMPETITIONS_URL},
     ],
@@ -166,6 +171,10 @@ def load_config():
             cfg = json.load(fh)
         if not isinstance(cfg, dict) or not isinstance(cfg.get("apps"), list):
             raise ValueError("Struktur ungueltig")
+        if not isinstance(cfg.get("profiles"), list):
+            # aeltere launcher.json: Startprofile ergaenzen und speichern
+            cfg["profiles"] = DEFAULT_CONFIG["profiles"]
+            save_config(cfg)
         return cfg
     except Exception:
         # Korrupte Datei toleriert laden (Leerzustand statt Absturz)
@@ -286,6 +295,23 @@ def app_status_text(app, procs):
     return "Pfad fehlt", "warn"
 
 
+def profile_plan(cfg, profile, procs):
+    """(starten, laufen_bereits, ohne_pfad) fuer ein Startprofil ermitteln."""
+    apps_by_id = {a.get("id"): a for a in cfg.get("apps", [])}
+    start, already, nopath = [], [], []
+    for app_id in profile.get("apps", []):
+        a = apps_by_id.get(app_id)
+        if not a:
+            continue
+        if app_is_running(a, procs):
+            already.append(a)
+        elif a.get("path") or a.get("fixed"):
+            start.append(a)
+        else:
+            nopath.append(a)
+    return start, already, nopath
+
+
 def start_app(app):
     """Programm starten. Rueckgabe: Fehlermeldung oder None."""
     path = app.get("path") or ""
@@ -308,27 +334,31 @@ def start_app(app):
 # ---------------------------------------------------------------------------
 
 STYLE = """
-QWidget { background-color: #14181d; color: #e8eef3; font-family: 'Segoe UI'; font-size: 12px; }
-QLabel#groupLabel { color: #7d93a3; font-size: 12px; letter-spacing: 1px; }
-QLabel#title { color: #00e5ff; font-size: 20px; font-weight: 600; }
-QLabel#version { color: #5a6b78; font-size: 12px; }
-QFrame#tile { background-color: #1a2129; border: 1px solid #2a3642; border-radius: 10px; }
-QFrame#accent { background-color: #00e5ff; border-radius: 2px; }
-QFrame#accentW { background-color: #f5a623; border-radius: 2px; }
-QLabel#appName { color: #e8eef3; font-size: 15px; font-weight: 600; }
-QLabel#appVersion { color: #7d93a3; font-size: 11px; }
-QLabel#appStatus { color: #5a6b78; font-size: 10px; }
+QWidget { font-family: 'Montserrat', 'Segoe UI', 'Inter', sans-serif; font-size: 13px; color: #f1f1f3; background-color: #0c0c0e; }
+QLabel#groupLabel { color: #8f8f99; font-size: 11px; font-weight: 800; letter-spacing: 1px; }
+QLabel#title { color: #f1f1f3; font-size: 19px; font-weight: 800; }
+QLabel#version { color: #8f8f99; font-size: 11px; }
+QFrame#tile { background-color: #131316; border: 1px solid #26262c; border-radius: 0; }
+QFrame#accent { background-color: #e8212b; border-radius: 0; }
+QFrame#accentW { background-color: #8f8f99; border-radius: 0; }
+QLabel#appName { color: #f1f1f3; font-size: 15px; font-weight: 700; }
+QLabel#appStatus { color: #8f8f99; font-size: 11px; }
 QPushButton {
-    background-color: #00b8cc; color: #0d1114; font-weight: 600;
-    border: none; border-radius: 6px; padding: 5px 14px;
+    background-color: rgba(52,51,56,0.92); color: #f1f1f3; font-weight: 700;
+    border: 1px solid rgba(255,255,255,0.07); border-radius: 0; padding: 7px 16px;
 }
-QPushButton:hover { background-color: #00e5ff; }
-QPushButton:disabled { background-color: #26333f; color: #7d93a3; }
+QPushButton:hover { border-color: #e8212b; background-color: rgba(80,79,86,0.96); }
+QPushButton:pressed { background-color: #131316; }
+QPushButton:disabled { color: #8f8f99; background-color: #15151a; border-color: #26262c; }
+QPushButton#primary { background-color: #e8212b; color: #ffffff; border: 1px solid #e8212b; }
+QPushButton#primary:hover { background-color: #ff3a45; border-color: #ff3a45; }
+QPushButton#primary:pressed { background-color: #a81119; }
 QPushButton#linkBtn {
-    background-color: #1a2129; color: #00e5ff; border: 1px solid #2a3642;
-    text-align: left; padding: 10px 12px;
+    background-color: #131316; color: #ff5a63; border: 1px solid #26262c;
+    text-align: left; padding: 10px 12px; border-radius: 0;
 }
-QPushButton#linkBtn:hover { border-color: #00b8cc; }
+QPushButton#linkBtn:hover { border-color: #e8212b; }
+QLabel#feedback { color: #ff5a63; font-size: 12px; }
 """
 
 
@@ -383,6 +413,7 @@ def main():
         status.setObjectName("appStatus")
         status.setWordWrap(True)
         btn = QPushButton("Starten")
+        btn.setObjectName("primary")
         btn.clicked.connect(lambda: on_start(app_cfg, btn))
         col = QVBoxLayout(tile)
         col.setContentsMargins(20, 14, 20, 14)
@@ -432,17 +463,55 @@ def main():
     next_row = add_group("R3E-ÖKOSYSTEM", "r3e", 1)
     next_row = add_group("WEITERE PROGRAMME", "weitere", next_row)
 
+    # --- Startprofile --------------------------------------------------------
+    prof_feedback = QLabel("")
+    prof_feedback.setObjectName("feedback")
+    links_row = next_row
+
+    def on_profile(prof):
+        procs = running_process_names()
+        start, already, nopath = profile_plan(cfg, prof, procs)
+        errs = 0
+        for a in start:
+            if start_app(a):
+                errs += 1
+        msg = "%s: %d gestartet" % (prof.get("name", "Profil"), len(start) - errs)
+        if already:
+            msg += ", %d lief bereits" % len(already)
+        if nopath:
+            msg += ", %d ohne Pfad uebersprungen" % len(nopath)
+        if errs:
+            msg += ", %d Fehler" % errs
+        prof_feedback.setText(msg)
+        QTimer.singleShot(8000, lambda: prof_feedback.setText(""))
+        refresh()
+
+    if cfg.get("profiles"):
+        lbl = QLabel("STARTPROFILE")
+        lbl.setObjectName("groupLabel")
+        outer.addWidget(lbl, next_row, 0, 1, 3, Qt.AlignTop)
+        prow = QHBoxLayout()
+        for prof in cfg.get("profiles", []):
+            pbtn = QPushButton(prof.get("name", ""))
+            pbtn.setObjectName("primary")
+            pbtn.clicked.connect(lambda _=False, p=prof: on_profile(p))
+            prow.addWidget(pbtn)
+        prow.addStretch(1)
+        outer.addLayout(prow, next_row + 1, 0, 1, 3)
+        outer.addWidget(prof_feedback, next_row + 2, 0, 1, 3)
+        links_row = next_row + 3
+
     # --- Links ---------------------------------------------------------------
     lbl = QLabel("LINKS")
     lbl.setObjectName("groupLabel")
-    outer.addWidget(lbl, next_row, 0, 1, 3, Qt.AlignTop)
+    outer.addWidget(lbl, links_row, 0, 1, 3, Qt.AlignTop)
     col = 0
     for link in cfg.get("links", []):
         btn = QPushButton(link.get("name", "") + "  ↗")
         btn.setObjectName("linkBtn")
         url = link.get("url", "")
         btn.clicked.connect(lambda _=False, u=url: QDesktopServices.openUrl(QUrl(u)))
-        outer.addWidget(btn, next_row + 1, col)
+        outer.addWidget(btn, links_row + 1, col)
         col += 1
 
     footer = QLabel("Statusprüfung ausschließlich lesend · der Launcher schreibt nur launcher.json")

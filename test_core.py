@@ -51,6 +51,37 @@ check("expand_hint ersetzt Platzhalter",
 # 7) results_db_info auf Linux: Datei nicht vorhanden -> (False, 0)
 check("results_db fehlt ok", main.results_db_info()[0] is False)
 
+# 8) Startprofile: Standardprofile vorhanden und konsistent
+profiles = {p["id"]: p for p in main.DEFAULT_CONFIG.get("profiles", [])}
+check("Standardprofile vorhanden", {"rennabend", "analyse"} <= set(profiles))
+app_ids = {a["id"] for a in main.DEFAULT_CONFIG["apps"]}
+for pid, prof in profiles.items():
+    check("Profil %s verweist nur auf bekannte Apps" % pid, set(prof["apps"]) <= app_ids)
+
+# 9) profile_plan: starten/laeuft/ohne Pfad sauber trennen
+cfg = {"apps": [
+    {"id": "a", "path": "C:/x/a.exe", "process": "a.exe"},
+    {"id": "b", "path": "C:/x/b.exe", "process": "b.exe"},
+    {"id": "c", "path": "", "process": ""},
+    {"id": "d", "path": "C:/x/d.exe", "process": "d.exe", "fixed": True},
+]}
+prof = {"id": "p", "name": "P", "apps": ["a", "b", "c", "d", "unbekannt"]}
+s, al, np_ = main.profile_plan(cfg, prof, {"b.exe"})
+check("profile_plan starten", [x["id"] for x in s] == ["a", "d"])
+check("profile_plan laeuft bereits", [x["id"] for x in al] == ["b"])
+check("profile_plan ohne Pfad", [x["id"] for x in np_] == ["c"])
+
+# 10) load_config ergaenzt Profile in alten Konfigurationen
+import tempfile
+tmpdir = tempfile.mkdtemp()
+monkey = main.base_dir
+main.base_dir = (lambda: tmpdir)
+old_cfg = {"schema_version": 1, "apps": [{"id": "x", "name": "T", "path": "C:/a.exe"}]}
+main.save_config(old_cfg)
+loaded = main.load_config()
+check("alte Konfig erhaelt Startprofile", loaded.get("profiles") == main.DEFAULT_CONFIG["profiles"])
+main.base_dir = monkey
+
 print()
 print("ERGEBNIS: %s" % ("ALLE TESTS BESTANDEN" if not fails else "FEHLGESCHLAGEN: %s" % fails))
 sys.exit(1 if fails else 0)
