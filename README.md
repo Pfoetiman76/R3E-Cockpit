@@ -21,9 +21,12 @@ Schlanker Launcher für das R3E-Ökosystem und weitere Simracing-Programme — i
 
 ## Installation
 
-1. Auf der GitHub-Releases-Seite die neueste Version herunterladen: `R3ECockpit.exe`.
-2. Datei entblocken, falls Windows den Sperrhinweis zeigt: Rechtsklick → Eigenschaften → Häkchen „Zulassen“.
-3. Starten. Beim ersten Start wird automatisch eine `launcher.json` neben der EXE angelegt.
+1. Auf der GitHub-Releases-Seite die neueste Version herunterladen: `R3ECockpit-v*-win64.zip`.
+2. ZIP entpacken (Rechtsklick → Alle extrahieren) — am besten in einen eigenen Ordner, z. B. `D:\R3ECockpit`. Wichtig: Die EXE benötigt die mitgelieferten Dateien im Ordner, nicht einzeln verschieben.
+3. Entblocken, falls Windows den Sperrhinweis zeigt: Rechtsklick auf die ZIP → Eigenschaften → Häkchen „Zulassen“ → entpacken (damit gelten alle entpackten Dateien als erlaubt).
+4. `R3ECockpit.exe` starten. Beim ersten Start wird automatisch eine `launcher.json` im selben Ordner angelegt.
+
+Hinweis: Die App wird als Ordner-Paket (Onedir) ausgeliefert; dadurch startet sie sofort ohne das kurze schwarze Entpack-Fenster des Onefile-Modus.
 
 ## Erste Einrichtung
 

@@ -18,19 +18,21 @@ jobs:
         run: pip install pyinstaller PySide6
       - name: Kernfunktionstests
         run: python test_core.py
-      - name: EXE bauen
-        run: pyinstaller --noconfirm --onefile --windowed --name R3ECockpit main.py
-      - name: EXE pruefen
+      - name: EXE bauen (Onedir: schneller Start, kein schwarzes Entpack-Fenster)
+        run: pyinstaller --noconfirm --onedir --windowed --name R3ECockpit main.py
+      - name: Paket pruefen und als ZIP schnueren
         run: |
-          if (-Not (Test-Path "dist/R3ECockpit.exe")) { throw "dist/R3ECockpit.exe fehlt" }
-          if ((Get-Item "dist/R3ECockpit.exe").Length -lt 1000000) { throw "EXE verdächtig klein" }
+          if (-Not (Test-Path "dist/R3ECockpit/R3ECockpit.exe")) { throw "dist/R3ECockpit/R3ECockpit.exe fehlt" }
+          Compress-Archive -Path "dist/R3ECockpit" -DestinationPath "dist/R3ECockpit-$env:GITHUB_REF_NAME-win64.zip" -Force
+          if ((Get-Item "dist/R3ECockpit-$env:GITHUB_REF_NAME-win64.zip").Length -lt 10000000) { throw "ZIP verdächtig klein" }
       - name: Release erstellen oder bestehendes aktualisieren
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = $env:GITHUB_REF_NAME
+          $asset = "dist/R3ECockpit-$tag-win64.zip"
           if (gh release view "$tag" -R "$env:GITHUB_REPOSITORY") {
-            gh release upload "$tag" "dist/R3ECockpit.exe#R3E Cockpit" --clobber -R "$env:GITHUB_REPOSITORY"
+            gh release upload "$tag" "$asset#R3E Cockpit $tag (ZIP, entpacken und R3ECockpit.exe starten)" --clobber -R "$env:GITHUB_REPOSITORY"
           } else {
-            gh release create "$tag" --title "$tag" --verify-tag "dist/R3ECockpit.exe#R3E Cockpit" -R "$env:GITHUB_REPOSITORY"
+            gh release create "$tag" --title "$tag" --verify-tag "$asset#R3E Cockpit $tag (ZIP, entpacken und R3ECockpit.exe starten)" -R "$env:GITHUB_REPOSITORY"
           }

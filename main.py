@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 APP_NAME = "R3E Cockpit"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.1"
 CONFIG_NAME = "launcher.json"
 SCHEMA_VERSION = 1
 
