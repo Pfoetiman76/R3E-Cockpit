@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["main.py", "test_core.py"]
+  pull_request:
+    paths: ["main.py", "test_core.py"]
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Kernfunktionstests
+        run: python test_core.py
