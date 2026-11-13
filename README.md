@@ -28,6 +28,15 @@ Schlanker Launcher für das R3E-Ökosystem und weitere Simracing-Programme — i
 
 Hinweis: Ausgeliefert wird wie bei PitBoss R3E ein Inno-Setup-Installationsprogramm; die App liegt danach als Ordner (Onedir) und startet sofort ohne das kurze schwarze Entpack-Fenster des Onefile-Modus.
 
+## Automatisches Update
+
+Der Cockpit prüft 1,5 Sekunden nach dem Start automatisch die GitHub-Releases. Liegt eine neuere Version vor, erscheint oben rechts der rote Button „v… herunterladen“:
+
+1. Button anklicken → Herunterladen bestätigen.
+2. Der Cockpit lädt den Installer, schließt sich und startet die Installation; danach einfach den Cockpit neu starten.
+
+Schlägt die Prüfung fehl (GitHub gerade nicht erreichbar), zeigt der Button dies an — der Cockpit läuft sonst ganz normal weiter. Manuell geht es immer über die Releases-Seite.
+
 ## Erste Einrichtung
 
 Die App versucht, Installationspfade automatisch zu erkennen. Kacheln ohne gefundenen Pfad zeigen den Button **„Pfad festlegen“**:

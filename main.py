@@ -11,13 +11,15 @@ import sqlite3
 import subprocess
 import sys
 
+import updater  # 0.3.0: Update-Pruefung ueber GitHub Releases
+
 # Hilfsprozesse unsichtbar ausfuehren: Ohne dieses Flag oeffnet Windows fuer
 # JEDEN tasklist-Aufruf ein eigenes schwarzes Konsolenfenster (die App selbst
 # hat keine Konsole). Auf anderen Plattformen ist das Flag 0.
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 APP_NAME = "R3E Cockpit"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
 CONFIG_NAME = "launcher.json"
 SCHEMA_VERSION = 1
 
@@ -359,6 +361,11 @@ QPushButton#linkBtn {
 }
 QPushButton#linkBtn:hover { border-color: #e8212b; }
 QLabel#feedback { color: #ff5a63; font-size: 12px; }
+QPushButton#updBtn {
+    background-color: transparent; color: #ff5a63; font-weight: 700;
+    border: 1px solid #e8212b; border-radius: 0; padding: 5px 12px;
+}
+QPushButton#updBtn:hover { background-color: #e8212b; color: #ffffff; }
 """
 
 
@@ -367,7 +374,7 @@ def main():
     from PySide6.QtGui import QDesktopServices
     from PySide6.QtWidgets import (
         QApplication, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
-        QPushButton, QVBoxLayout, QWidget,
+        QMessageBox, QPushButton, QVBoxLayout, QWidget,
     )
 
     cfg = load_config()
@@ -397,9 +404,58 @@ def main():
     head.addWidget(version)
     head.addStretch(1)
     head.addWidget(rr_label)
+    upd_btn = QPushButton("Update verfuegbar ↓")
+    upd_btn.setObjectName("updBtn")
+    upd_btn.setVisible(False)
+    upd_btn.clicked.connect(lambda: on_update_clicked())
+    head.addWidget(upd_btn)
     outer.addLayout(head, 0, 0, 1, 3)
 
     tiles = {}
+
+    # --- Automatisches Update (0.3.0) ---------------------------------------
+    update_info = {}
+
+    def check_update():
+        res = updater.check_for_update(APP_VERSION)
+        if res.get("available"):
+            update_info.update(res)
+            upd_btn.setText("v%s herunterladen ↓" % res.get("tag", "?").lstrip("v"))
+            upd_btn.setVisible(True)
+        elif res.get("error"):
+            upd_btn.setText("Update-Pruefung fehlgeschlagen")
+            upd_btn.setVisible(True)
+        # sonst: aktuell, Button bleibt unsichtbar
+
+    def on_update_clicked():
+        if not update_info.get("url"):
+            reply = QMessageBox.information(
+                root, "R3E Cockpit Update",
+                "Kein Update verfuegbar. Du nutzt bereits Version %s." % APP_VERSION)
+            return
+        reply = QMessageBox.question(
+            root, "R3E Cockpit Update",
+            "Version %s ist verfuegbar (installiert: %s).\n\n"
+            "Herunterladen und Installation jetzt starten?\n"
+            "Der Cockpit schliesst sich dafuer." % (update_info.get("tag", "?"), APP_VERSION),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if reply != QMessageBox.Yes:
+            return
+        upd_btn.setText("Lade herunter …")
+        upd_btn.setEnabled(False)
+        path = updater.download_asset(update_info.get("url"))
+        upd_btn.setEnabled(True)
+        if not path:
+            upd_btn.setText("Download fehlgeschlagen")
+            QMessageBox.warning(root, "R3E Cockpit Update",
+                                "Der Download ist fehlgeschlagen. Bitte spaeter erneut "
+                                "probieren oder manuell von der Releases-Seite laden.")
+            return
+        if updater.run_installer(path):
+            app.quit()
+        else:
+            QMessageBox.warning(root, "R3E Cockpit Update",
+                                "Installer konnte nicht gestartet werden: %s" % path)
 
     def make_tile(app_cfg):
         tile = QFrame()
@@ -544,6 +600,7 @@ def main():
 
     root.show()
     refresh()
+    QTimer.singleShot(1500, check_update)
     sys.exit(app.exec())
 
 

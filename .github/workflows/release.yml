@@ -23,6 +23,8 @@ jobs:
 
       - name: Kernfunktionstests
         run: python test_core.py
+      - name: Updater-Tests
+        run: python test_updater.py
 
       - name: Version aus Tag ableiten
         shell: bash

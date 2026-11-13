@@ -3,9 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
-    paths: ["main.py", "test_core.py"]
+    paths: ["main.py", "updater.py", "test_core.py", "test_updater.py"]
   pull_request:
-    paths: ["main.py", "test_core.py"]
+    paths: ["main.py", "updater.py", "test_core.py", "test_updater.py"]
 
 jobs:
   test:
@@ -17,3 +17,5 @@ jobs:
           python-version: "3.12"
       - name: Kernfunktionstests
         run: python test_core.py
+      - name: Updater-Tests
+        run: python test_updater.py
